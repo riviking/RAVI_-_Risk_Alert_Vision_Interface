@@ -1,0 +1,213 @@
+import React, { useState, useRef } from "react";
+
+export const SettingsPage = ({ 
+  isUploading, setIsUploading, onUpload, planImage, setPlanImage,
+  buildings, setBuildings, selectedBuildingId, selectedFloorId,
+  setSelectedBuildingId, setSelectedFloorId, onNavigateBack
+}) => {
+  const [tempName, setTempName] = useState(""); 
+  const [selectedFile, setSelectedFile] = useState(null);  
+  const [isSavingToDb, setIsSavingToDb] = useState(false);
+  
+  const dragInfo = useRef({ isDragging: false, targetId: null, targetType: null, startX: 0, startY: 0 });
+  const viewportRef = useRef(null);
+
+  const handleWidgetMouseDown = (e, id, currentX, currentY, type) => {
+    e.preventDefault();
+    e.stopPropagation(); 
+    dragInfo.current = {
+      isDragging: true,
+      targetId: id,
+      targetType: type, 
+      startX: e.clientX - currentX,
+      startY: e.clientY - currentY
+    };
+  };
+
+  const handleViewportMouseMove = (e) => {
+    if (!dragInfo.current.isDragging) return;
+
+    const { targetId, targetType, startX, startY } = dragInfo.current;
+    
+    let newX = e.clientX - startX;
+    let newY = e.clientY - startY;
+
+    if (viewportRef.current) {
+      const bounds = viewportRef.current.getBoundingClientRect();
+      newX = Math.max(25, Math.min(newX, bounds.width - 25));
+      newY = Math.max(25, Math.min(newY, bounds.height - 25));
+    }
+    
+    if (targetType === 'building') {
+      setBuildings(buildings.map(b => b.id === targetId ? { ...b, x: newX, y: newY } : b));
+    } 
+    else if (targetType === 'sensor') {
+      setBuildings(buildings.map(b => {
+        if (b.id === selectedBuildingId) {
+          return {
+            ...b,
+            floors: b.floors.map(f => {
+              if (f.id === selectedFloorId) {
+                return {
+                  ...f,
+                  sensors: f.sensors.map(s => s.id === targetId ? { ...s, x: newX, y: newY } : s)
+                };
+              }
+              return f;
+            })
+          };
+        }
+        return b;
+      }));
+    }
+  };
+
+  const handleGlobalMouseUp = () => {
+    dragInfo.current.isDragging = false;
+  };
+
+  const handleSaveToMongoDB = async () => {
+    try {
+      setIsSavingToDb(true);
+      const payload = {
+        masterPlanImage: planImage,
+        infrastructure: buildings
+      };
+
+      const response = await fetch("http://localhost:5000/api/layout/save", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json"
+        },
+        body: JSON.stringify(payload)
+      });
+
+      if (response.ok) {
+        alert("✨ Architecture configuration tree synced to cloud database!");
+      } else {
+        alert("❌ Failed to push network config to database.");
+      }
+    } catch (err) {
+      console.error(err);
+      alert("❌ Critical Error connecting with server api link workspace.");
+    } finally {
+      setIsSavingToDb(false);
+    }
+  };
+
+  let currentActiveMapImage = planImage;
+  let activeSensorsArray = [];
+
+  if (selectedFloorId) {
+    for (const building of buildings) {
+      const matchingFloor = building.floors?.find(f => f.id === selectedFloorId);
+      if (matchingFloor) {
+        currentActiveMapImage = matchingFloor.image;
+        activeSensorsArray = matchingFloor.sensors || []; 
+        break;
+      }
+    }
+  }
+
+  if (isUploading) {
+    return (
+        <div className="settings-container">
+            <h2>Upload Building Plan</h2>
+            <br/>
+            <div className="input-group">
+              <label>Plan Label Name</label>
+              <input type="text" placeholder="e.g., Main Campus Map" value={tempName} onChange={(e) => setTempName(e.target.value)}/>
+            </div>
+            <div className="upload-group">
+              <input type="file" accept="image/*" onChange={(e) => setSelectedFile(e.target.files[0])}/>
+            </div>
+            <div className="button-group">
+              <button className="save-btn" disabled={!selectedFile || !tempName} onClick={() => onUpload(selectedFile, tempName)}>Confirm & Set Plan</button>
+              <button className="back-btn" onClick={() => setIsUploading(false)}>Cancel</button>
+            </div>    
+        </div>
+    );
+  }
+
+  return (
+    <div className="settings-container" onMouseUp={handleGlobalMouseUp} style={{ height: "100%", display: "flex", flexDirection: "column" }}>
+      
+      <div style={{ display: "flex", gap: "12px", background: "#1a1a1a", padding: "12px", borderRadius: "8px", border: "1px solid #333", marginBottom: "12px" }}>
+        <button className="save-btn" onClick={handleSaveToMongoDB} disabled={isSavingToDb}>
+          {isSavingToDb ? "Pushing Changes..." : "💾 Save Layout Configuration"}
+        </button>
+        {selectedFloorId && (
+          <button className="back-btn" onClick={() => setSelectedFloorId(null)}>
+            ⬅️ Back to Global Site Map
+          </button>
+        )}
+        <button className="back-btn" onClick={onNavigateBack} style={{ borderColor: "#ea580c", color: "#f97316" }}>
+          ❌ Exit Workspace
+        </button>
+      </div>
+
+      {planImage ? (
+        <div className="settings-workspace" style={{ flex: 1 }}>
+           <div className="plan-viewport" ref={viewportRef} onMouseMove={handleViewportMouseMove} style={{ position: 'relative', overflow: 'hidden' }}>
+              
+              {/* ✨ UPDATED WRAPPER: Matches display attributes exactly */}
+              <div className="plan-canvas" style={{ position: 'relative', display: 'inline-block' }}>
+                <img 
+                  src={currentActiveMapImage} 
+                  alt="Setup Layout" 
+                  style={{ maxWidth: '100%', maxHeight: '100%', display: 'block', pointerEvents: "none" }}
+                />
+                
+                {!selectedFloorId && buildings.map((building) => (
+                   <div
+                     key={building.id}
+                     className="building-widget"
+                     onMouseDown={(e) => handleWidgetMouseDown(e, building.id, building.x, building.y, 'building')}
+                     style={{
+                       position: 'absolute', left: `${building.x}px`, top: `${building.y}px`,
+                       transform: 'translate(-50%, -50%)', cursor: 'move',
+                       boxShadow: building.id === selectedBuildingId ? '0 0 15px #818cf8' : '0 4px 10px rgba(0,0,0,0.4)',
+                       borderColor: building.id === selectedBuildingId ? '#818cf8' : '#fff'
+                     }}
+                   >
+                     <span className="widget-label">{building.name}</span>
+                   </div>
+                 ))}  
+
+                {selectedFloorId && activeSensorsArray.map((sensor) => (
+                   <div
+                     key={sensor.id}
+                     className="building-widget" 
+                     onMouseDown={(e) => handleWidgetMouseDown(e, sensor.id, sensor.x, sensor.y, 'sensor')}
+                     style={{
+                       position: 'absolute', left: `${sensor.x}px`, top: `${sensor.y}px`,
+                       transform: 'translate(-50%, -50%)', cursor: 'move',
+                       background: '#10b981', 
+                       borderColor: '#fff',
+                       boxShadow: '0 4px 10px rgba(0,0,0,0.5)'
+                     }}
+                   >
+                     <span className="widget-label" style={{ backgroundColor: '#064e3b', borderColor: '#10b981' }}>
+                       {sensor.roomName} ({sensor.sensorId})
+                     </span>
+                   </div>
+                 ))}  
+              </div>
+
+           </div>
+           
+           {!selectedFloorId && (
+             <button className="back-btn" onClick={() => setIsUploading(true)} style={{ width: 'fit-content', marginTop: "8px" }}>
+               Replace Master Map Blueprint
+             </button>
+           )}
+        </div>
+      ) : (
+        <div className="settings-option" onClick={() => setIsUploading(true)}>
+          <h3>Set the plan</h3>
+          <p>Upload a new Building map</p>
+        </div>
+      )}
+    </div>
+  );
+};
