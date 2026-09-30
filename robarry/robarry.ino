@@ -9,8 +9,8 @@
 const char* SENSOR_ID = "A003"; 
 
 // 📶 Network Configuration Setup
-const char* ssid = "realme Note 50";          
-const char* password = "tekka#12";  
+const char* ssid = "Galaxy M14 5G 7160";          
+const char* password = "123456789";  
 
 // 🖥️ Backend Server API Endpoint Connection String
 const char* serverUrl = "http://172.20.62.177:5000/api/fire";

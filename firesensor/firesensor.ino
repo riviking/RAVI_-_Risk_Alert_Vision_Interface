@@ -9,11 +9,11 @@
 #include <DHT.h>
 
 // ================= WIFI =================
-const char* ssid = "realme Note 50";
-const char* password = "tekka#12";
+const char* ssid = "Galaxy M14 5G 7160";
+const char* password = "123456789";
 
 // ================= SERVER =================
-const char* serverHost = " 10.23.167.177";
+const char* serverHost = "192.168.106.24";
 const int serverPort = 5000;
 const char* apiPath = "/api/fire";
 
